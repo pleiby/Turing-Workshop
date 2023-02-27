@@ -25,6 +25,7 @@ using Turing
 using Distributions
 using StatsPlots
 using CSV
+using DataFrames
 using DataFramesMeta
 using LazyArrays
 using BenchmarkTools
@@ -115,10 +116,13 @@ We specify the model inside a macro `@model` where we can assign variables in tw
 #| output: false
 using Turing
 
-@model function dice_throw(y)
-    p ~ Dirichlet(6, 1)
+@model function dice_throw(y) # Turing models are functions of observed data
+    # Priors for parameters
+    p ~ Dirichlet(6, 1) # 2nd param = 1 indicates uniform over 6 probs that total to 1.0
 
+    # Likelihood statement (prob(y|p))
     for i in eachindex(y)
+        # Categorical is a type alias describingspecial case of DiscreteNonParametric dist
         y[i] ~ Categorical(p)
     end
 end
@@ -133,11 +137,11 @@ end
 using Distributions
 
 my_data = rand(DiscreteUniform(1, 6), 1_000)
-model = dice_throw(my_data)
+model = dice_throw(my_data) # model to be fit to (informed by) these data
 
 # NUTS with 1k iter,
 # 1k warmup, and
-# acceptance rate of 80%
+# target acceptance rate of 80% of sample for tuning args
 chain = sample(model, NUTS(1_000, 0.8), 1_000)
 ```
 
@@ -197,7 +201,11 @@ Just use `sample(model, sampler, MCMCThreads(), N, chains)`.
 
 ```{julia}
 # 4 chains
-chain_multi = sample(model, NUTS(1_000, 0.8), MCMCThreads(), 1_000, 4)
+chain_multi = sample(model,
+    NUTS(1_000, 0.8),
+    MCMCThreads(),
+    1_000,
+    4)
 ```
 
 ## Performance Tips
@@ -229,7 +237,7 @@ Respondents with elevated arsenic levels in their wells had been encouraged to s
 using CSV
 using DataFrames
 
-wells = CSV.read("data/wells.csv", DataFrame)
+wells = CSV.read("2023-Intro-Turing/data/wells.csv", DataFrame)
 describe(wells)
 ```
 
@@ -251,17 +259,17 @@ using LinearAlgebra: ⋅
 @model function logreg_naive(X, y; predictors=size(X, 2))
     # priors
     α ~ Normal(0, 2.5)
-    β ~ filldist(TDist(3), predictors)
+    β ~ filldist(TDist(3), predictors) # vector of identical distributions
 
     # likelihood
-    for i in eachindex(y)
-        y[i] ~ BernoulliLogit(α + X[i, :] ⋅ β)
+    for i in eachindex(y) # specify y[i] likelihood for each observation i
+        y[i] ~ BernoulliLogit(α + X[i, :] ⋅ β) # logistic model regression
     end
 end
 
 model_naive = logreg_naive(X, y)
 
-@btime sample(model_naive, NUTS(1_000, 0.8), 1_000)
+@btime sample(model_naive, NUTS(1_000, 0.8), 1_000) # 1000 samples after 1000 warmup
 ```
 
 ::: aside
@@ -269,6 +277,9 @@ model_naive = logreg_naive(X, y)
 :::
 
 ## Logistic Regression `wells` --- Performance Model {.scrollable}
+
+Only thing different is use a LazyArray over obs, for performance,
+rather than separate Likelihood distribution for each observation
 
 ```{julia}
 using LazyArrays
@@ -286,6 +297,19 @@ model_perf = logreg_perf(X, y)
 
 @btime sample(model_perf, NUTS(1_000, 0.8), 1_000)
 ```
+
+Find: Can get ~2X speedup with LazyArray, with essentially the same est results
+
+For benchmarking and estimating time for Bayesian execution with Turing,
+see tools available at
+https://github.com/TuringLang/TuringBenchmarking.jl
+
+See SciML for excellent Julia package, e.g. for automated discovery of unknown models
+with hybrid neural and Bayesian models
+https://docs.sciml.ai/Overview/stable/showcase/missing_physics/
+
+For Turing documentation, introduction and tutorials, see turinglang.org, e.g.
+https://turinglang.org/v0.24/docs/using-turing/get-started
 
 ## References
 
